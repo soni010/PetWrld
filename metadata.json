@@ -1,0 +1,7 @@
+{
+  "name": "Petwrld",
+  "description": "All-in-one pet ecosystem: e-commerce, vet & care bookings, pet social community & Instagram for pets, digital Pet ID passport, services directory, 24/7 ambulance & NGO drives, events, relocation, pet wiki & coin quizzes, and Gemini AI assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
