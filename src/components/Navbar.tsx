@@ -15,8 +15,9 @@ import {
   Trophy,
   Plane,
   BookOpen,
+  User,
 } from 'lucide-react';
-import { PetProfile } from '../types';
+import { PetProfile, UserAccount } from '../types';
 
 interface NavbarProps {
   activeTab: string;
@@ -30,6 +31,7 @@ interface NavbarProps {
   onOpenSOS: () => void;
   onOpenAIChat: () => void;
   onOpenAddPet: () => void;
+  currentUser: UserAccount | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,6 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCart,
   onOpenAIChat,
   onOpenAddPet,
+  currentUser,
 }) => {
   const [petDropdownOpen, setPetDropdownOpen] = useState(false);
   const activePet = pets.find((p) => p.id === activePetId) || pets[0];
@@ -57,6 +60,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'events', label: 'Events & Races', icon: Trophy },
     { id: 'relocation', label: 'Relocation & Chip', icon: Plane },
     { id: 'wiki-quiz', label: 'Wiki & Quiz', icon: BookOpen, badge: 'Win 🪙' },
+    {
+      id: 'account',
+      label: currentUser ? 'My Account' : 'Login / Register',
+      icon: User,
+      badge: !currentUser ? 'New' : undefined,
+    },
   ];
 
   return (
@@ -138,6 +147,36 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
           </div>
+
+          {/* User Account / Login Button */}
+          {currentUser ? (
+            <div className="flex items-center gap-2">
+              <button
+                id="header-account-btn"
+                onClick={() => setActiveTab('account')}
+                title={`Logged in as ${currentUser.owner.name} (${currentUser.email})`}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                  activeTab === 'account'
+                    ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-xs'
+                    : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
+                }`}
+              >
+                <div className="w-5 h-5 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center font-black text-[10px]">
+                  {currentUser.owner.name.charAt(0)}
+                </div>
+                <span className="hidden md:inline">{currentUser.owner.name.split(' ')[0]}</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              id="header-login-btn"
+              onClick={() => setActiveTab('account')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold transition-all shadow-xs"
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+          )}
 
           {/* Cart Icon */}
           <button

@@ -10,6 +10,8 @@ import {
   Activity,
   HeartPulse,
   AlertTriangle,
+  Loader2,
+  Crosshair,
 } from 'lucide-react';
 import { PetProfile } from '../types';
 
@@ -27,8 +29,62 @@ export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({
   const [step, setStep] = useState<'form' | 'dispatched'>('form');
   const [emergencyType, setEmergencyType] = useState('Toxic Ingestion / Poisoning');
   const [location, setLocation] = useState('742 Evergreen Terrace, Metro District (Auto-detected)');
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [notes, setNotes] = useState('');
   const [etaSeconds, setEtaSeconds] = useState(480); // 8 mins
+
+  const handleDetectEmergencyGps = async () => {
+    setIsDetectingLocation(true);
+
+    const applyCoords = async (lat: number, lng: number) => {
+      try {
+        const rev = await fetch(`/api/location/reverse-geocode?lat=${lat}&lng=${lng}`);
+        const data = await rev.json();
+        if (data && data.formattedAddress) {
+          setLocation(`${data.formattedAddress} (GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+        } else {
+          setLocation(`Live Coordinates: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
+      } catch (err) {
+        setLocation(`Live Coordinates: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      } finally {
+        setIsDetectingLocation(false);
+      }
+    };
+
+    const fallbackToIp = async () => {
+      try {
+        const ipRes = await fetch('/api/location/detect-ip');
+        const ipData = await ipRes.json();
+        if (ipData && typeof ipData.latitude === 'number') {
+          await applyCoords(ipData.latitude, ipData.longitude);
+          return;
+        }
+      } catch (e) {
+        console.warn('IP fallback failed in SOS:', e);
+      }
+      setIsDetectingLocation(false);
+    };
+
+    if (!navigator.geolocation) {
+      await fallbackToIp();
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyCoords(pos.coords.latitude, pos.coords.longitude);
+      },
+      () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => applyCoords(pos.coords.latitude, pos.coords.longitude),
+          () => fallbackToIp(),
+          { timeout: 7000, enableHighAccuracy: false, maximumAge: 300000 }
+        );
+      },
+      { timeout: 6000, enableHighAccuracy: true, maximumAge: 60000 }
+    );
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -161,9 +217,24 @@ export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({
 
               {/* Location Input */}
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  Ambulance Pickup Address / Live GPS Location *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-stone-700">
+                    Ambulance Pickup Address / Live GPS Location *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleDetectEmergencyGps}
+                    disabled={isDetectingLocation}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-md border border-rose-200 transition-colors disabled:opacity-50"
+                  >
+                    {isDetectingLocation ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                    ) : (
+                      <Crosshair className="w-3 h-3 text-rose-600" />
+                    )}
+                    <span>{isDetectingLocation ? 'Locating...' : 'Use My Live GPS'}</span>
+                  </button>
+                </div>
                 <div className="relative">
                   <Navigation className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
                   <input

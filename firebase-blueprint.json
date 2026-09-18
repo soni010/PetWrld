@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with contact info, coins balance, and pet companion settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "phone": { "type": "string", "maxLength": 20 },
+        "gender": { "type": "string", "maxLength": 20 },
+        "address": { "type": "string", "maxLength": 250 },
+        "city": { "type": "string", "maxLength": 80 },
+        "pincode": { "type": "string", "maxLength": 20 },
+        "emergencyContact": { "type": "string", "maxLength": 50 },
+        "petCoins": { "type": "number" },
+        "activePetId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email"]
+    },
+    "Pet": {
+      "title": "Pet",
+      "description": "Companion pet profile including medical details, microchip, and breed info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 60 },
+        "species": { "type": "string", "maxLength": 30 },
+        "breed": { "type": "string", "maxLength": 60 },
+        "age": { "type": "string", "maxLength": 30 },
+        "gender": { "type": "string", "maxLength": 20 },
+        "weight": { "type": "string", "maxLength": 20 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "color": { "type": "string", "maxLength": 50 },
+        "bloodGroup": { "type": "string", "maxLength": 30 },
+        "microchipNumber": { "type": "string", "maxLength": 40 },
+        "petIdCode": { "type": "string", "maxLength": 40 },
+        "allergies": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "species"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Veterinary doctor booking reservation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "vetId": { "type": "string", "maxLength": 60 },
+        "vetName": { "type": "string", "maxLength": 100 },
+        "clinicName": { "type": "string", "maxLength": 150 },
+        "petName": { "type": "string", "maxLength": 60 },
+        "date": { "type": "string", "maxLength": 30 },
+        "time": { "type": "string", "maxLength": 30 },
+        "type": { "type": "string", "maxLength": 50 },
+        "fee": { "type": "number" },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "vetName", "date", "time"]
+    },
+    "CartItem": {
+      "title": "CartItem",
+      "description": "E-commerce product item saved in cart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 80 },
+        "title": { "type": "string", "maxLength": 150 },
+        "price": { "type": "number" },
+        "quantity": { "type": "number" },
+        "image": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "productId", "quantity"]
+    },
+    "EmergencySosAlert": {
+      "title": "EmergencySosAlert",
+      "description": "Emergency pet ambulance dispatch record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "emergencyType": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 250 },
+        "petName": { "type": "string", "maxLength": 60 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "emergencyType", "location"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with private settings and coin balance"
+    },
+    "/users/{userId}/pets/{petId}": {
+      "schema": "Pet",
+      "description": "User's registered companion pets and passports"
+    },
+    "/users/{userId}/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "User's vet appointments and telehealth consultations"
+    },
+    "/users/{userId}/cart/{cartItemId}": {
+      "schema": "CartItem",
+      "description": "User's shopping cart items"
+    },
+    "/emergency_sos/{sosId}": {
+      "schema": "EmergencySosAlert",
+      "description": "Active and dispatched pet ambulance SOS alerts"
+    }
+  }
+}

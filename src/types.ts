@@ -1,5 +1,29 @@
 export type PetType = 'dog' | 'cat' | 'bird' | 'rabbit' | 'other';
 
+export type OwnerGender = 'Male' | 'Female' | 'Non-binary' | 'Prefer not to say';
+
+export interface OwnerProfile {
+  id: string;
+  name: string;
+  phone: string;
+  gender: OwnerGender;
+  email: string; // gmail / email
+  address: string;
+  city: string;
+  pincode: string;
+  emergencyContact: string;
+  memberSince: string;
+}
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  password?: string;
+  owner: OwnerProfile;
+  pets: PetProfile[];
+  activePetId: string;
+}
+
 export interface PetProfile {
   id: string;
   petIdCode: string; // e.g. "PWR-9024-DOG"

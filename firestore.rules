@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny Catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Probing / Connection test endpoint
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validations for UserProfile
+    function isValidUserProfile(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 20)) &&
+             (!('gender' in data) || (data.gender is string && data.gender.size() <= 20)) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 250)) &&
+             (!('city' in data) || (data.city is string && data.city.size() <= 80)) &&
+             (!('pincode' in data) || (data.pincode is string && data.pincode.size() <= 20)) &&
+             (!('emergencyContact' in data) || (data.emergencyContact is string && data.emergencyContact.size() <= 50)) &&
+             (!('petCoins' in data) || (data.petCoins is number && data.petCoins >= 0)) &&
+             (!('activePetId' in data) || (data.activePetId is string && data.activePetId.size() <= 128));
+    }
+
+    // Validations for Pet
+    function isValidPet(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 60 &&
+             data.species is string && data.species.size() <= 30 &&
+             (!('breed' in data) || (data.breed is string && data.breed.size() <= 60)) &&
+             (!('age' in data) || (data.age is string && data.age.size() <= 30)) &&
+             (!('gender' in data) || (data.gender is string && data.gender.size() <= 20)) &&
+             (!('weight' in data) || (data.weight is string && data.weight.size() <= 20)) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+             (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
+             (!('bloodGroup' in data) || (data.bloodGroup is string && data.bloodGroup.size() <= 30)) &&
+             (!('microchipNumber' in data) || (data.microchipNumber is string && data.microchipNumber.size() <= 40)) &&
+             (!('petIdCode' in data) || (data.petIdCode is string && data.petIdCode.size() <= 40)) &&
+             (!('allergies' in data) || (data.allergies is string && data.allergies.size() <= 300));
+    }
+
+    // Validations for Appointment
+    function isValidAppointment(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.vetName is string && data.vetName.size() <= 100 &&
+             data.date is string && data.date.size() <= 30 &&
+             data.time is string && data.time.size() <= 30 &&
+             (!('clinicName' in data) || (data.clinicName is string && data.clinicName.size() <= 150)) &&
+             (!('petName' in data) || (data.petName is string && data.petName.size() <= 60)) &&
+             (!('type' in data) || (data.type is string && data.type.size() <= 50)) &&
+             (!('fee' in data) || (data.fee is number && data.fee >= 0)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 30));
+    }
+
+    // Validations for CartItem
+    function isValidCartItem(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.productId is string && data.productId.size() <= 80 &&
+             data.quantity is number && data.quantity > 0 && data.quantity <= 100 &&
+             (!('title' in data) || (data.title is string && data.title.size() <= 150)) &&
+             (!('price' in data) || (data.price is number && data.price >= 0)) &&
+             (!('image' in data) || (data.image is string && data.image.size() <= 500));
+    }
+
+    // Validations for EmergencySosAlert
+    function isValidEmergencySos(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.emergencyType is string && data.emergencyType.size() <= 100 &&
+             data.location is string && data.location.size() <= 250 &&
+             (!('petName' in data) || (data.petName is string && data.petName.size() <= 60)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 30));
+    }
+
+    // User document & subcollections
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().id == userId;
+      allow update: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().id == existing().id && incoming().email == existing().email;
+      allow delete: if isOwner(userId);
+
+      // Registered Pets Subcollection
+      match /pets/{petId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPet(incoming()) && incoming().userId == userId;
+        allow update: if isOwner(userId) && isValidPet(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isOwner(userId);
+      }
+
+      // Vet Appointments Subcollection
+      match /appointments/{appointmentId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAppointment(incoming()) && incoming().userId == userId;
+        allow update: if isOwner(userId) && isValidAppointment(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isOwner(userId);
+      }
+
+      // Shopping Cart Subcollection
+      match /cart/{cartItemId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCartItem(incoming()) && incoming().userId == userId;
+        allow update: if isOwner(userId) && isValidCartItem(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Emergency SOS Collection
+    match /emergency_sos/{sosId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidEmergencySos(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidEmergencySos(incoming()) && incoming().userId == existing().userId && incoming().userId == request.auth.uid;
+    }
+  }
+}

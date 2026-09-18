@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { EcommerceShop } from './components/EcommerceShop';
 import { VetBooking } from './components/VetBooking';
@@ -14,6 +14,28 @@ import { PetWikiAndQuiz } from './components/PetWikiAndQuiz';
 import { EmergencySOSModal } from './components/EmergencySOSModal';
 import { AIChatModal } from './components/AIChatModal';
 import { AddPetModal } from './components/AddPetModal';
+import { LoginPage } from './components/LoginPage';
+import { getCurrentUser, setCurrentUser } from './data/initialAccounts';
+import { auth } from './firebase/config';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  subscribeUserProfile,
+  subscribePetsFromFirestore,
+  subscribeAppointmentsFromFirestore,
+  saveUserProfileToFirestore,
+  savePetToFirestore,
+  saveAppointmentToFirestore,
+  updatePetCoinsInFirestore,
+  syncCartItemToFirestore,
+  removeCartItemFromFirestore,
+  clearCartInFirestore,
+} from './firebase/firestoreService';
+import {
+  syncUserToSupabase,
+  syncPetToSupabase,
+  syncAppointmentToSupabase,
+  syncCartItemToSupabase,
+} from './supabase/supabaseService';
 
 import {
   INITIAL_PETS,
@@ -37,6 +59,7 @@ import {
   BookingAppointment,
   PetgramPost,
   ForumPost,
+  UserAccount,
 } from './types';
 import { Heart, Siren, Bot, Shield, Phone, Sparkles, Coins } from 'lucide-react';
 
@@ -44,9 +67,24 @@ export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<string>('shop');
 
+  // User Account & Authentication State
+  const [currentUser, setCurrentUserState] = useState<UserAccount | null>(() => getCurrentUser());
+  const [isGuest, setIsGuest] = useState<boolean>(false);
+
   // Pet Profiles State
-  const [pets, setPets] = useState<PetProfile[]>(INITIAL_PETS);
-  const [activePetId, setActivePetId] = useState<string>(INITIAL_PETS[0].id);
+  const [pets, setPets] = useState<PetProfile[]>(() => {
+    const user = getCurrentUser();
+    if (user && user.pets.length > 0) {
+      const initialIds = new Set(user.pets.map((p) => p.id));
+      const remainingInitial = INITIAL_PETS.filter((p) => !initialIds.has(p.id));
+      return [...user.pets, ...remainingInitial];
+    }
+    return INITIAL_PETS;
+  });
+  const [activePetId, setActivePetId] = useState<string>(() => {
+    const user = getCurrentUser();
+    return user?.activePetId || INITIAL_PETS[0].id;
+  });
   const activePet = pets.find((p) => p.id === activePetId) || pets[0];
 
   // E-Commerce & Gamification Coins State
@@ -68,19 +106,116 @@ export default function App() {
   const [isAIChatOpen, setIsAIChatOpen] = useState<boolean>(false);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isAddPetOpen, setIsAddPetOpen] = useState<boolean>(false);
+  const [fbUser, setFbUser] = useState<any>(() => auth.currentUser);
 
-  // E-Commerce Cart Handlers
+  // Synchronize Firebase Auth user state
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      setFbUser(user);
+      if (user) {
+        const existing = getCurrentUser();
+        if (existing && existing.id === user.uid) {
+          setCurrentUserState(existing);
+        } else {
+          const googleAccount: UserAccount = {
+            id: user.uid,
+            email: user.email || 'user@petwrld.com',
+            owner: {
+              id: `owner-${user.uid}`,
+              name: user.displayName || user.email?.split('@')[0] || 'Pet Parent',
+              phone: user.phoneNumber || '+91 98201 12345',
+              gender: 'Prefer not to say',
+              email: user.email || '',
+              address: 'Metro Companion Residence',
+              city: 'Bengaluru',
+              pincode: '560001',
+              emergencyContact: '+91 98201 99999',
+              memberSince: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            },
+            pets: [INITIAL_PETS[0]],
+            activePetId: INITIAL_PETS[0].id,
+          };
+          setCurrentUserState(googleAccount);
+          setCurrentUser(googleAccount);
+        }
+      }
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Real-time Cloud Firestore synchronization for logged-in user
+  useEffect(() => {
+    // Only subscribe to Cloud Firestore if the user is authenticated in Firebase Auth
+    // and currentUser ID matches the authenticated Firebase UID
+    if (!currentUser || !fbUser || fbUser.uid !== currentUser.id) return;
+
+    // 1. Subscribe to User Profile (Coins balance, active companion ID)
+    const unsubProfile = subscribeUserProfile(currentUser.id, (data) => {
+      if (typeof data.petCoins === 'number') {
+        setPetCoins(data.petCoins);
+      }
+      if (data.activePetId) {
+        setActivePetId(data.activePetId);
+      }
+    });
+
+    // 2. Subscribe to Registered Pets Subcollection: /users/{userId}/pets
+    const unsubPets = subscribePetsFromFirestore(currentUser.id, (cloudPets) => {
+      if (cloudPets && cloudPets.length > 0) {
+        setPets((prev) => {
+          const cloudIds = new Set(cloudPets.map((p) => p.id));
+          const localOnly = prev.filter((p) => !cloudIds.has(p.id));
+          return [...cloudPets, ...localOnly];
+        });
+      }
+    });
+
+    // 3. Subscribe to Appointments Subcollection: /users/{userId}/appointments
+    const unsubApps = subscribeAppointmentsFromFirestore(currentUser.id, (cloudApps) => {
+      if (cloudApps && cloudApps.length > 0) {
+        setAppointments((prev) => {
+          const cloudIds = new Set(cloudApps.map((a) => a.id));
+          const localOnly = prev.filter((a) => !cloudIds.has(a.id));
+          return [...cloudApps, ...localOnly];
+        });
+      }
+    });
+
+    return () => {
+      unsubProfile();
+      unsubPets();
+      unsubApps();
+    };
+  }, [currentUser?.id, fbUser?.uid]);
+
+  // E-Commerce Cart Handlers with Firestore synchronization
   const handleAddToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
+      let nextCart: CartItem[];
       if (existing) {
-        return prev.map((item) =>
+        nextCart = prev.map((item) =>
           item.product.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
+      } else {
+        nextCart = [...prev, { product, quantity: 1 }];
       }
-      return [...prev, { product, quantity: 1 }];
+
+      if (currentUser) {
+        const itemToSync = nextCart.find((i) => i.product.id === product.id);
+        if (itemToSync) {
+          syncCartItemToFirestore(currentUser.id, itemToSync).catch((e) =>
+            console.warn('[Firestore] Cart item sync note:', e)
+          );
+          syncCartItemToSupabase(currentUser.id, itemToSync).catch((e) =>
+            console.warn('[Supabase] Cart item sync note:', e)
+          );
+        }
+      }
+
+      return nextCart;
     });
   };
 
@@ -89,44 +224,103 @@ export default function App() {
       handleRemoveFromCart(productId);
       return;
     }
-    setCart((prev) =>
-      prev.map((item) =>
+    setCart((prev) => {
+      const nextCart = prev.map((item) =>
         item.product.id === productId ? { ...item, quantity } : item
-      )
-    );
+      );
+      if (currentUser) {
+        const itemToSync = nextCart.find((i) => i.product.id === productId);
+        if (itemToSync) {
+          syncCartItemToFirestore(currentUser.id, itemToSync).catch((e) =>
+            console.warn('[Firestore] Cart quantity sync note:', e)
+          );
+        }
+      }
+      return nextCart;
+    });
   };
 
   const handleRemoveFromCart = (productId: string) => {
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    if (currentUser) {
+      removeCartItemFromFirestore(currentUser.id, productId).catch((e) =>
+        console.warn('[Firestore] Cart remove note:', e)
+      );
+    }
   };
 
   const handleClearCart = () => {
     setCart([]);
+    if (currentUser) {
+      clearCartInFirestore(currentUser.id).catch((e) =>
+        console.warn('[Firestore] Cart clear note:', e)
+      );
+    }
   };
 
   const handleDeductCoins = (amount: number) => {
-    setPetCoins((prev) => Math.max(0, prev - amount));
+    setPetCoins((prev) => {
+      const next = Math.max(0, prev - amount);
+      if (currentUser) {
+        updatePetCoinsInFirestore(currentUser.id, next).catch((e) =>
+          console.warn('[Firestore] Coins update note:', e)
+        );
+      }
+      return next;
+    });
   };
 
   const handleAddCoins = (amount: number) => {
-    setPetCoins((prev) => prev + amount);
+    setPetCoins((prev) => {
+      const next = prev + amount;
+      if (currentUser) {
+        updatePetCoinsInFirestore(currentUser.id, next).catch((e) =>
+          console.warn('[Firestore] Coins update note:', e)
+        );
+      }
+      return next;
+    });
   };
 
-  // Appointment & Health Handlers
+  // Appointment & Health Handlers with Firestore & Supabase persistence
   const handleAddAppointment = (appointment: BookingAppointment) => {
     setAppointments((prev) => [appointment, ...prev]);
+    if (currentUser) {
+      saveAppointmentToFirestore(currentUser.id, appointment).catch((e) =>
+        console.warn('[Firestore] Appointment save note:', e)
+      );
+      syncAppointmentToSupabase(currentUser.id, appointment).catch((e) =>
+        console.warn('[Supabase] Appointment save note:', e)
+      );
+    }
   };
 
-  // Pet Profile Handlers
+  // Pet Profile Handlers with Firestore & Supabase persistence
   const handleAddPet = (newPet: PetProfile) => {
     setPets((prev) => [...prev, newPet]);
     setActivePetId(newPet.id);
+    if (currentUser) {
+      savePetToFirestore(currentUser.id, newPet).catch((e) =>
+        console.warn('[Firestore] Pet add note:', e)
+      );
+      syncPetToSupabase(currentUser.id, newPet).catch((e) =>
+        console.warn('[Supabase] Pet add note:', e)
+      );
+    }
   };
 
   const handleUpdatePet = (updatedPet: PetProfile) => {
     setPets((prev) =>
       prev.map((p) => (p.id === updatedPet.id ? updatedPet : p))
     );
+    if (currentUser) {
+      savePetToFirestore(currentUser.id, updatedPet).catch((e) =>
+        console.warn('[Firestore] Pet update note:', e)
+      );
+      syncPetToSupabase(currentUser.id, updatedPet).catch((e) =>
+        console.warn('[Supabase] Pet update note:', e)
+      );
+    }
   };
 
   // Community Handlers
@@ -138,7 +332,107 @@ export default function App() {
     setForumPosts((prev) => [post, ...prev]);
   };
 
+  // Authentication Handlers
+  const handleLoginSuccess = (account: UserAccount) => {
+    setCurrentUserState(account);
+    setCurrentUser(account);
+    setIsGuest(false);
+
+    // Save to Firestore & Supabase on login
+    saveUserProfileToFirestore(account, petCoins).catch((e) =>
+      console.warn('[Firestore] Profile sync note on login:', e)
+    );
+    syncUserToSupabase(account, petCoins).catch((e) =>
+      console.warn('[Supabase] Profile sync note on login:', e)
+    );
+    if (account.pets && account.pets.length > 0) {
+      for (const pet of account.pets) {
+        syncPetToSupabase(account.id, pet).catch((e) =>
+          console.warn('[Supabase] Initial pet sync note:', e)
+        );
+      }
+    }
+
+    // Sync any registered pets to the active pets state
+    setPets((prev) => {
+      const existingIds = new Set(prev.map((p) => p.id));
+      const newPets = account.pets.filter((p) => !existingIds.has(p.id));
+      return [...newPets, ...prev];
+    });
+
+    if (account.activePetId) {
+      setActivePetId(account.activePetId);
+    }
+    setActiveTab('shop');
+  };
+
+  const handleLogout = () => {
+    signOut(auth).catch((e) => console.warn('[Firebase] SignOut error:', e));
+    setCurrentUserState(null);
+    setCurrentUser(null);
+    setIsGuest(false);
+  };
+
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+
+  // GATEWAY: Show Login / Pet Registration Page first if unauthenticated
+  if (!currentUser && !isGuest) {
+    return (
+      <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col font-sans antialiased selection:bg-amber-200 selection:text-amber-900">
+        {/* Portal Header */}
+        <header className="bg-white border-b border-stone-200 py-3.5 px-4 sm:px-8 shadow-xs">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black flex items-center justify-center text-xl shadow-md shadow-amber-500/20">
+                🐾
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black tracking-tight text-stone-900">Petwrld</span>
+                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    Sign-In Portal
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-500 hidden sm:block">Unified Companion Health, Commerce & Care</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsGuest(true)}
+                className="text-xs font-semibold text-stone-600 hover:text-stone-900 px-3.5 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-50 transition-colors"
+              >
+                Browse as Guest
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Dedicated Gateway View */}
+        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8">
+          <LoginPage
+            currentUser={null}
+            onLoginSuccess={handleLoginSuccess}
+            onLogout={handleLogout}
+            onNavigateToPetId={() => {
+              setIsGuest(true);
+              setActiveTab('pet-id');
+            }}
+            onNavigateToShop={() => {
+              setIsGuest(true);
+              setActiveTab('shop');
+            }}
+            onContinueAsGuest={() => setIsGuest(true)}
+          />
+        </main>
+
+        <footer className="py-4 text-center text-xs text-stone-400 border-t border-stone-200/80 bg-white">
+          Petwrld SafePass™ & ISO 11784 Microchip Verified Ecosystem • All Rights Reserved
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans antialiased selection:bg-amber-200 selection:text-amber-900">
@@ -151,6 +445,7 @@ export default function App() {
         setActivePetId={setActivePetId}
         petCoins={petCoins}
         cartCount={cartCount}
+        currentUser={currentUser}
         onOpenCart={() => {
           setActiveTab('shop');
           setIsCartOpen(true);
@@ -162,6 +457,17 @@ export default function App() {
 
       {/* Main Feature View Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Account, Login & Pet Registration Page */}
+        {activeTab === 'account' && (
+          <LoginPage
+            currentUser={currentUser}
+            onLoginSuccess={handleLoginSuccess}
+            onLogout={handleLogout}
+            onNavigateToPetId={() => setActiveTab('pet-id')}
+            onNavigateToShop={() => setActiveTab('shop')}
+          />
+        )}
+
         {/* Feature 1: E-Commerce */}
         {activeTab === 'shop' && (
           <EcommerceShop
@@ -406,6 +712,11 @@ export default function App() {
                 <li>
                   <button onClick={() => setIsAIChatOpen(true)} className="hover:text-amber-400">
                     AI Symptom Checker
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setActiveTab('account')} className="hover:text-amber-400 font-semibold text-amber-400">
+                    Pet Account & Registration
                   </button>
                 </li>
               </ul>

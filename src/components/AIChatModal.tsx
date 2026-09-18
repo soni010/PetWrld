@@ -74,11 +74,18 @@ export const AIChatModal: React.FC<AIChatModalProps> = ({
         ? `Pet profile: Name is ${activePet.name}, Species: ${activePet.species}, Breed: ${activePet.breed}, Age: ${activePet.age}, Weight: ${activePet.weight}kg, Known allergies: ${activePet.allergies.join(', ') || 'None'}.`
         : 'Pet profile: General dog/cat inquiry.';
 
+      const history = messages.slice(-6).map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'model',
+        content: m.text,
+      }));
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userText,
+          history,
+          petProfile: activePet,
           petContext,
         }),
       });
@@ -182,7 +189,7 @@ export const AIChatModal: React.FC<AIChatModalProps> = ({
 
                 <div className="space-y-1">
                   <div
-                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
+                    className={`p-3.5 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
                       isUser
                         ? 'bg-amber-600 text-white rounded-tr-xs'
                         : 'bg-white border border-stone-200 text-stone-800 rounded-tl-xs shadow-xs'
